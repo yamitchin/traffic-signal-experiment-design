@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.DS_Store
+.ipynb_checkpoints/
+
+# Sprites del repo original (Apache 2.0). Se traen con fetch_assets.py
+src/images/
+src/intersection.png
+src/red.png
+src/yellow.png
+src/green.png
+
+# CSV generados por corridas nuevas
+src/*.csv
