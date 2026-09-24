@@ -1,39 +1,49 @@
 # Traffic Signal Experiment Design
 
-**Simulating an A/B test you cannot run on live infrastructure.**
+**Auditing my own MSc capstone, and rebuilding the experiment it could not support.**
 
 Most of Europe shows red+amber before green. Australia, New Zealand, Canada and
-South Africa do not. Does the extra phase actually improve traffic flow?
+South Africa do not. In 2023 I tried to answer whether the extra phase improves
+traffic flow, using a simulation, as my Master of Data Science capstone.
 
-You cannot rewire Sydney's traffic signals to find out. There is no permission,
-no budget, and a failed trial means collisions. When the intervention cannot be
-tested in the field, the only option is to build a model that generates the
-counterfactual data and run the experiment there.
+In 2026 I went back and audited it. The experiment was confounded across six
+parameters, three of its metrics measured nothing, and its results were not
+reproducible between machines. It could not have answered the question either
+way.
 
-This repository contains that model, the data it generated, and the analysis.
+This repository documents that audit and the rebuild that followed.
 
 ---
 
 ## TL;DR
 
-The red-amber phase **eliminates 96% of start-up lost time** (Cohen's d = 8.6,
-p < 1e-29). It does **not** improve throughput or delay, because it costs
-2.0 seconds of cycle time to save 1.5 seconds of driver reaction.
+**What is established here:** the original design could not support its
+conclusion. The treatment and control hard-coded the very quantity the
+hypothesis was about, and the three headline metrics were each broken in a way
+that is visible in four lines of code. That part is verifiable from the
+snippets below and needs no new experiment.
 
-That result **reverses the conclusion of my original MSc capstone**, which was
-built on a confounded experiment and three metrics that measured nothing.
+**What the rebuild adds:** a well-posed version of the comparison, seeded and
+deterministic, with the two arms sharing one code path.
+
+**What the rebuild does *not* establish:** whether the red-amber phase is worth
+having. The rebuild shows no detectable difference in throughput or delay, but
+with one seed per condition it is not powered to make that a finding. And the
+large effect on start-up lost time is **an algebraic consequence of the
+parameters, not a measurement** — see [What this does not
+show](#what-this-does-not-show), which is the most important section in this
+README.
+
+The honest summary is that this is a **methods project with a simulation
+attached**, not a study that settles the traffic-engineering question.
 
 ---
 
 ## Background
 
 This started as my Master of Data Science capstone at Western Sydney University
-in 2023 (INFO7016 / INFO7017, supervisor Paul Hurley). I revisited it in 2026,
-audited my own experimental design, and found it could not support its own
-conclusion.
-
-What follows documents the rebuild. The original submission is not in this
-repository.
+in 2023 (INFO7016 / INFO7017, supervisor Paul Hurley). The original submission
+is not in this repository; the code it ran on is quoted below.
 
 ---
 
@@ -57,25 +67,11 @@ No observed difference could be attributed to the amber phase.
 
 Worse: `PRT = 0` in the treatment and `PRT = 2` in the control **encodes the
 conclusion in the assumptions**. The entire hypothesis is that the amber phase
-reduces effective reaction time, and that difference had been hard-coded.
+reduces effective reaction time, and that difference had been written in by
+hand.
 
-**The fix is structural.** Two scenario files will always drift. One file with a
-single switch cannot:
-
-```python
-# The only difference between the two arms:
-if ESCENARIO == "AMBER":
-    correrIntervalo('amber_start', AMBAR_ARRANQUE)   # red+amber, 2 s
-    correrIntervalo('green', VERDE)
-    correrIntervalo('amber_clear', AMBAR_DESPEJE)    # clearance, 4 s
-else:
-    correrIntervalo('green', VERDE)
-    correrIntervalo('amber_clear', AMBAR_DESPEJE)
-```
-
-PRT is now the **same constant in both arms**. What differs is *when the driver
-receives the cue*, with the amber, two seconds earlier. The difference in
-start-up lost time emerges as a measured outcome instead of an input.
+This is the strongest finding in the repository, and it is checkable by anyone
+who reads the two files.
 
 ### 2. All three metrics measured something else
 
@@ -105,91 +101,196 @@ than the traffic, and results changed between computers.
 
 The original cycled all four approaches one at a time. Opposing movements are
 not conflicting and run concurrently in any real intersection. The corrected
-model uses two phases (North-South, East-West), which halves the cycle and
-roughly doubles capacity.
+model uses two phases (North-South, East-West).
+
+---
+
+## The rebuild
+
+Two scenario files will always drift. One file with a single switch drifts
+less:
+
+```python
+# The phase ordering, and the only intentional difference between the arms:
+if ESCENARIO == "AMBER":
+    correrIntervalo('amber_start', AMBAR_ARRANQUE)   # red+amber, 2 s
+    correrIntervalo('green', VERDE)
+    correrIntervalo('amber_clear', AMBAR_DESPEJE)    # clearance, 4 s
+else:
+    correrIntervalo('green', VERDE)
+    correrIntervalo('amber_clear', AMBAR_DESPEJE)
+```
+
+PRT is the same constant in both arms. What differs is when the driver receives
+the cue.
+
+**One honest caveat about "a single switch":** adding 2 s of amber while holding
+both green *and* cycle length fixed is impossible, so something has to give.
+Two cycle designs are run to bracket it:
+
+| Design | Amber arm | Control arm | What is held fixed |
+|---|---|---|---|
+| Fixed cycle | green 10 s | **green 12 s** | cycle length (32 s) |
+| Extended | green 10 s | green 10 s | **green time** (cycle 32 vs 28 s) |
+
+So neither design is a clean one-factor contrast, and the original cannot be
+indicted for six-parameter drift without admitting that the rebuild has one
+unavoidable second factor. Running both designs is how that is handled, not a
+claim that it went away.
+
+Seeded and framerate-capped, so the same configuration produces the same output
+on any machine. Common random numbers are used across all four conditions,
+which is standard simulation practice and reduces the variance of the
+between-arm comparison.
 
 ---
 
 ## Results
 
-Four runs: 2 scenarios x 2 cycle designs, 300 s each, identical seed.
+Four runs: 2 scenarios x 2 cycle designs, 300 s each, identical seed. Figures
+below are the **fixed-cycle design** unless stated.
 
-| Metric | Amber | Control | Difference | p |
+| Metric | Amber | Control | Difference | Test |
 |---|---|---|---|---|
-| **Start-up lost time** | **0.05 s** | **1.51 s** | **-96.5%** | 1.2e-29 |
-| Vehicles cleared | 265 | 268 | -1.1% | ns |
-| Idle time | 11.10 s | 9.84 s | +12.8% | 0.067 |
-| Total delay | 23.90 s | 22.73 s | +5.1% | 0.258 |
-| PRT consumed | 1.45 s | 1.39 s | +4.4% | ns |
+| Start-up lost time (per phase-approach) | 0.05 s | 1.51 s | -96.5% | see caveat below |
+| Idle time (per vehicle) | 11.10 s | 9.84 s | +12.8% | Welch p = 0.067, Hedges g = 0.16 |
+| Total delay (per vehicle) | 23.90 s | 22.73 s | +5.1% | Mann-Whitney p = 0.258 |
+| Vehicles cleared | 265 | 268 | -1.1% | *no test possible, n = 1 per condition* |
+| PRT consumed (per vehicle) | 1.45 s | 1.39 s | +4.4% | Welch p = 0.459 |
 
-### The mechanism: effective green
+Note the direction: the amber arm is **slightly worse on every outcome
+measure**. None of those differences is large — the idle-time effect size is
+g = 0.16, which is trivial even though its p-value is the lowest of the three.
+
+### Effective green
 
 | Condition | Green | Phase | Cycle | Start-up | Effective green | % of cycle | Vehicles |
 |---|---|---|---|---|---|---|---|
-| Control / fixed cycle | 12 | 16 | 32 | 1.51 | **10.49** | **32.8%** | 268 |
+| Control / fixed cycle | 12 | 16 | 32 | 1.51 | 10.49 | 32.8% | 268 |
 | Amber / fixed cycle | 10 | 16 | 32 | 0.05 | 9.95 | 31.1% | 265 |
 | Amber / extended | 10 | 16 | 32 | 0.06 | 9.94 | 31.1% | 266 |
 | Control / extended | 10 | 14 | 28 | 1.54 | 8.46 | 30.2% | 264 |
 
-Throughput follows effective green. The two amber conditions have identical
-effective green and produced 265 and 266 vehicles.
+Effective green as a share of cycle spans an 8.5% relative range across the four
+conditions. Throughput spans 1.5%. **If throughput tracked effective green those
+ranges would be comparable, and they are not** — a capacity story predicts about
+23 vehicles of spread and four were observed. The rank order does not match
+either: the middle two conditions are inverted.
 
-### Break-even
+The likely reason is in the saturation table: at 88-89% of demand cleared, the
+intersection is only marginally oversaturated, so throughput is closer to
+demand-limited than capacity-limited. Either way, four conditions at one seed
+each, with a total spread of four vehicles, cannot distinguish these stories.
+
+### Break-even, and why it is not a result
 
 ```
 Start-up lost time eliminated : 1.53 s
 Cost of the starting amber    : 2.00 s
 --------------------------------------
-Net balance per phase         : -0.47 s   ->  LOSES
+Net balance per phase         : -0.47 s
 ```
 
-| Starting amber | Net balance | Outcome |
+This arithmetic is **the inequality `PRT < AMBAR_ARRANQUE`, restated**. Both
+terms are input parameters. The simulation contributes nothing to this line.
+
+| PRT | Balance vs a 2.0 s amber | Outcome |
 |---|---|---|
-| 1.0 s | +0.53 s | gains |
-| 1.5 s | +0.03 s | breaks even |
-| 2.0 s (UK standard) | -0.47 s | loses |
-| 3.0 s (Russia) | -1.47 s | loses |
+| 1.0 s | -1.00 s | loses |
+| **1.5 s (used here)** | **-0.50 s** | **loses** |
+| 2.0 s | 0.00 s | breaks even |
+| 2.5 s (AASHTO design value) | +0.50 s | gains |
 
-> **The starting amber pays for itself only if it is shorter than the start-up
-> lost time it removes.** At the UK's 2-second standard, against a 1.5-second
-> driver reaction time, it is not.
-
-### What the simulation looks like
-
-The heads-up display reports the active phase group, the queue on each approach,
-mean idle time, and the running mean start-up lost time.
-
-![Amber scenario, fixed cycle](docs/screenshot-amber-fixed-cycle.png)
-
-*Amber / fixed cycle, t = 74 s. Start-up lost time 0.05 s over 5 phase-approaches.*
-
-![Control scenario, extended cycle](docs/screenshot-control-extended-cycle.png)
-
-*Control / extended cycle. Start-up lost time 1.47 s over 10 phase-approaches.*
-
-These two frames come from **different cycle designs at different elapsed
-times**, so the queue counters and idle averages shown in them are not
-comparable to each other. The line that is comparable is start-up lost time,
-because it is measured per phase-approach rather than per run, and it sits near
-1.5 s in both control conditions. The four-condition comparison lives in the
-tables above, not in these screenshots.
+Published perception-reaction times run roughly 1.0 to 2.5 s depending on the
+source and the task. **The sign of the answer changes inside that range.** The
+1.5 s used here is a chosen value, not a calibrated one — see [Domain
+calibration](#domain-calibration). Until PRT is pinned to field data, this table
+is a statement of what the answer depends on, not the answer.
 
 ---
 
-## Limitations
+## What this does not show
 
-Stated here rather than buried:
+Read this before citing any number above.
 
-- **One replicate per condition.** The vehicle-level t-tests are
-  pseudoreplication. The start-up effect is large enough to survive it. The
-  throughput and delay differences are within noise and **not significant even
-  with inflated power**. Proper inference needs N seeds compared at replicate
-  level.
-- **The intersection is saturated.** 88-89% of generated vehicles cleared, with
-  queues growing throughout. Under saturation, capacity dominates and start-up
-  matters less. Low-demand behaviour is untested.
-- **No turning movements.** A protected left-turn phase would change the phase
-  structure and the result.
+**1. The start-up lost time effect is arithmetic, not a measurement.**
+
+Start-up lost time is defined as `primer_cruce_s - verde_inicio_s`. With
+`PRT = 1.5` and `AMBAR_ARRANQUE = 2.0`, the driver's reaction countdown under
+the amber arm finishes before green even begins, so its expected value is
+`max(0, 1.5 - 2.0) = 0`. Under control it starts at green, so its expected value
+is `1.5`. **The result is exact and requires no simulation to predict.**
+
+The data confirm this rather than test it: each group contains only eight
+distinct values, spaced at 1/60 s, which is the frame step. There is no
+stochastic variation in this outcome, only quantization. Consequently the
+effect size is meaningless — Hedges g is 8.4 as computed, and **93.7 if a single
+row is removed**, because the denominator is measurement artefact rather than
+variability. `analysis.py` prints both and says so.
+
+An earlier version of this README described the difference as one that "emerges
+as a measured outcome instead of an input". That was wrong. Replacing
+`PRT = 0` vs `PRT = 2` with one shared PRT removed a *numeric* hard-coding and
+left a *structural* one. The arm given a 2.0 s head start on a 1.5 s reaction
+cannot produce any other answer.
+
+What the number is still good for: it confirms the instrumentation now measures
+what it claims, which the original's version did not. That is a passing sanity
+check, not a finding.
+
+**2. There is one replicate per condition.**
+
+The unit of randomisation is the run, so n = 1 per arm. The 34 to 42
+phase-approaches are subsamples of a single traffic history that share queue
+state between them, not replicates. Between-run variance is not small; it is
+unestimated, because nothing here can estimate it. Every p-value in this
+repository understates its standard error for that reason.
+
+**3. "No improvement in throughput or delay" means no difference was
+detectable.**
+
+That is not the same as showing there is none. There is no power analysis, no
+minimum detectable effect and no equivalence bound, so the design cannot support
+accepting the null.
+
+**4. The audit does not prove the original's conclusion was false.**
+
+"The original design could not support its conclusion" and "the original
+conclusion is wrong" are different claims. This repository establishes the first.
+An invalid study can still reach a true conclusion by luck, and the rebuild does
+not have the statistical standing to overturn anything — at best it declines to
+reproduce.
+
+**5. Phases with no queue are discarded**, which conditions on a post-treatment
+variable and leaves unequal n between arms (34 vs 36, and 34 vs 42). Under
+near-saturation the bias is probably small, but it is not quantified.
+
+**6. The phase timings mix jurisdictions.** Starting amber is a UK value,
+clearance amber is Australian. The modelled intersection corresponds to no real
+country, and there is no all-red period in either arm. Since the whole
+break-even argument is a ledger in seconds, that matters.
+
+**7. The starting amber is modelled as 2.0 s added to the cycle.** In UK
+practice the red/amber period generally sits within the intergreen rather than
+extending the cycle by a full 2 s. If it is even partly absorbed, the cost term
+above is overstated.
+
+---
+
+## What would make this a real result
+
+In priority order:
+
+1. **N seeds per condition**, compared at replicate level, so between-run
+   variance is estimated rather than assumed away.
+2. **Calibrate or sweep PRT as an experimental factor.** It is currently the
+   parameter the entire conclusion turns on and the only one without a source.
+3. **A low-demand scenario.** Everything here is at 88-89% clearance; start-up
+   lost time should matter more when the intersection is not the binding
+   constraint.
+4. **Model the red/amber inside the intergreen** as an alternative to adding it
+   to the cycle, and compare.
+5. **Turning movements**, which would change the phase structure.
 
 ---
 
@@ -215,12 +316,16 @@ DISENO_CICLO = "CONSTANTE"   # or "EXTENDIDO"
 Each run writes `vehiculos_<scenario>_<design>_seed<N>.csv` and
 `fases_<scenario>_<design>_seed<N>.csv`. Change `RANDOM_SEED` for a new replicate.
 
-Analysis:
+Analysis, which runs on the committed data with no simulation required:
 
 ```bash
 cd analysis
 python analysis.py
 ```
+
+Both the phase-level and vehicle-level CSVs for seed 42 are committed, so this
+reproduces every table in this README. If the vehicle-level files are absent the
+script skips the tables that need them and says so rather than exiting.
 
 **Note on pygame:** on Python 3.14 use `pygame-ce`, which ships prebuilt wheels.
 Stock `pygame` 2.6.1 only publishes wheels up to cp313 and will try to compile
@@ -233,16 +338,17 @@ from source.
 ```
 src/simulator.py       the simulation, both scenarios, one code path
 src/fetch_assets.py    downloads the sprites from the upstream repo
-data/fases_*.csv       phase-level output, 146 records, the headline result
-analysis/analysis.py   summary tables, tests, effective green, break-even
+data/fases_*.csv       phase-level output, 146 records
+data/vehiculos_*.csv   vehicle-level output, 1063 records
+analysis/analysis.py   summary tables, effect sizes, effective green, break-even
 docs/standards.md      where the 2 s and 4 s intervals come from
 docs/screenshot-*.png  the simulation running, one frame per scenario
 ```
 
-The phase-level CSVs are committed because they carry the finding. The
-vehicle-level CSVs are not: the simulation is seeded and deterministic, so
-running the four configurations regenerates them byte for byte. That is a
-stronger reproducibility claim than checking the output in.
+The simulation is seeded and framerate-capped, so re-running the four
+configurations should regenerate these files. That is asserted from the design,
+not demonstrated by a hash or a CI check, and the upstream code it builds on
+uses threading, so treat it as a design intent rather than a guarantee.
 
 ### Data schema
 
@@ -266,22 +372,41 @@ stronger reproducibility claim than checking the output in.
 | `primer_cruce_s` | first queued vehicle crossing the stop line |
 | `start_up_lost_s` | `primer_cruce_s - verde_inicio_s` |
 
-Phases with no queue are discarded: with nothing waiting there is no start-up
-to measure.
-
 ---
 
 ## Domain calibration
-
-Phase durations are not invented. They come from published standards:
 
 | Interval | Value | Source |
 |---|---|---|
 | Red+amber (starting) | 2.0 s | UK DfT, Traffic Advisory Leaflet 1/06 |
 | Amber (clearance) | 4.0 s | Australian Traffic Signal Standard TS001, 50-60 km/h |
+| **Perception-reaction time** | **1.5 s** | **none — chosen, not calibrated** |
 
 TS001 clearance amber by posted speed: 40 km/h 3.0 s, 50-60 km/h 4.0 s,
 70 km/h 4.5 s, 80 km/h 5.0 s, 100 km/h 6.0 s.
+
+The PRT row is the weak point and is listed here rather than buried in the code.
+It is the parameter the break-even argument turns on, and it is the one without
+a source.
+
+---
+
+## Screenshots
+
+![Amber scenario, fixed cycle](docs/screenshot-amber-fixed-cycle.png)
+
+*Amber / fixed cycle, t = 74 s. Running mean start-up lost time 0.05 s over 5
+phase-approaches.*
+
+![Control scenario, extended cycle](docs/screenshot-control-extended-cycle.png)
+
+*Control / extended cycle. Running mean start-up lost time 1.47 s over 10
+phase-approaches.*
+
+These are running means at arbitrary moments from **different cycle designs at
+different elapsed times**, so no number visible in them is comparable across the
+two frames, and none matches a table above. They are here to show the
+instrumentation and the two-phase signal model, nothing more.
 
 ---
 
@@ -306,16 +431,23 @@ deterministic simulation clock, and the analysis.
 It contains no model and no accuracy score. It is about the other half of the
 discipline:
 
-- **Experimental design**: identifying a six-parameter confound and fixing it
-  structurally rather than by hand
-- **Instrumentation**: validating that a metric measures what it claims
-- **Reproducibility**: seeded, deterministic, machine-independent
-- **Causal reasoning**: separating "the intervention has the stated effect" from
-  "the intervention improves the outcome", which are different claims
-- **Honest reporting**: a negative result, with the mechanism quantified and the
-  limitations stated
+- **Experimental design** — finding a six-parameter confound in my own work and
+  fixing it structurally rather than by hand
+- **Instrumentation** — validating that a metric measures what it claims, and
+  then noticing that a validated metric can still be a tautology
+- **Reproducibility** — seeded, deterministic, machine-independent, with the
+  data committed so the analysis runs on a fresh clone
+- **Causal reasoning** — separating "the intervention has the stated effect"
+  from "the intervention improves the outcome", which are different claims
+- **Knowing what a result is** — an effect that falls out of the parameters is
+  not a discovery, a p-value computed over subsamples of one run is not
+  evidence, and a null under an underpowered design is not a negative result
 
-Those are the skills that decide whether an analysis can be trusted.
+The last one is the point. This repository originally reported a 96% improvement
+with a large effect size and a very small p-value. All three numbers were real
+in the sense that the arithmetic was right, and none of them meant what the
+headline said. Catching that in my own work is the skill the project is actually
+evidence of.
 
 ---
 
