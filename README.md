@@ -154,6 +154,26 @@ Net balance per phase         : -0.47 s   ->  LOSES
 > lost time it removes.** At the UK's 2-second standard, against a 1.5-second
 > driver reaction time, it is not.
 
+### What the simulation looks like
+
+The heads-up display reports the active phase group, the queue on each approach,
+mean idle time, and the running mean start-up lost time.
+
+![Amber scenario, fixed cycle](docs/screenshot-amber-fixed-cycle.png)
+
+*Amber / fixed cycle, t = 74 s. Start-up lost time 0.05 s over 5 phase-approaches.*
+
+![Control scenario, extended cycle](docs/screenshot-control-extended-cycle.png)
+
+*Control / extended cycle. Start-up lost time 1.47 s over 10 phase-approaches.*
+
+These two frames come from **different cycle designs at different elapsed
+times**, so the queue counters and idle averages shown in them are not
+comparable to each other. The line that is comparable is start-up lost time,
+because it is measured per phase-approach rather than per run, and it sits near
+1.5 s in both control conditions. The four-condition comparison lives in the
+tables above, not in these screenshots.
+
 ---
 
 ## Limitations
@@ -216,6 +236,7 @@ src/fetch_assets.py    downloads the sprites from the upstream repo
 data/fases_*.csv       phase-level output, 146 records, the headline result
 analysis/analysis.py   summary tables, tests, effective green, break-even
 docs/standards.md      where the 2 s and 4 s intervals come from
+docs/screenshot-*.png  the simulation running, one frame per scenario
 ```
 
 The phase-level CSVs are committed because they carry the finding. The
